@@ -28,4 +28,4 @@ urllib3==2.2.2
 Werkzeug==3.0.4
 yarl==1.9.4
 zipp==3.20.1
-g4f-client
+git+https://github.com/username/repo.git#egg=g4f-client
