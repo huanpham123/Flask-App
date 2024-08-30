@@ -1,13 +1,15 @@
 {
-    "version": 2,
-    "builds": [
-      {
-        "src": "./server.py",
-        "use": "@vercel/python"
-      }
-    ],
-    "rewrites": [
-        { "source": "/(.*)", "destination": "/"},
-        { "source": "/chat(.*)", "destination": "/"}
-    ]
-  }
+  "version": 2,
+  "builds": [
+    {
+      "src": "app.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/app.py"
+    }
+  ]
+}
