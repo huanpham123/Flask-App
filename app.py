@@ -18,7 +18,7 @@ tts = TTS(
 
 @app.route("/")
 def index():
-    return render_template("TTS.html")
+    return render_template("index.html")
 
 @app.route("/api/tts", methods=["GET", "POST"])
 def api_tts():
