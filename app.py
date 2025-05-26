@@ -1,43 +1,70 @@
-from flask import Flask, request, jsonify, send_from_directory, session, render_template
-from flask_cors import CORS
-from g4f.client import Client
-import os
+from flask import Flask, request, send_file, jsonify, render_template
+import io, logging
+from google.cloud import texttospeech
+from werkzeug.middleware.proxy_fix import ProxyFix
 
-app = Flask(__name__)
-app.secret_key = 'huankk123@@'  # Thay thế 'your_secret_key' bằng một chuỗi ngẫu nhiên an toàn
-CORS(app)
-client = Client()
+app = Flask(__name__, template_folder="templates")
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-@app.route('/')
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Khởi tạo client TTS
+tts_client = texttospeech.TextToSpeechClient()
+
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-@app.route('/chat', methods=['POST'])
-def chat():
-    data = request.json
-    user_input = data.get('message')
+@app.route("/api/tts", methods=["GET", "POST"])
+def tts():
+    # Lấy text từ GET hoặc POST JSON/form
+    text = ""
+    if request.method == "POST":
+        data = request.get_json(silent=True) or request.form
+        text = data.get("text", "")
+    else:
+        text = request.args.get("text", "")
 
-    if 'conversation' not in session:
-        session['conversation'] = []
+    if not text:
+        return jsonify({"error": "Missing text parameter"}), 400
 
-    # Thêm tin nhắn người dùng vào cuộc trò chuyện
-    session['conversation'].append({"role": "user", "content": user_input})
+    logger.info(f"Generating speech for: {text[:50]}…")
 
-    # Gửi toàn bộ lịch sử cuộc trò chuyện đến GPT-4
-    print("Lịch sử cuộc trò chuyện gửi đi:", session['conversation'])  # Log lịch sử cuộc trò chuyện
+    # Cấu hình request cho Google TTS
+    synthesis_input = texttospeech.SynthesisInput(text=text)
 
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=session['conversation'],
+    # Chọn voice tiếng Việt (Wavenet)
+    voice = texttospeech.VoiceSelectionParams(
+        language_code="vi-VN",
+        name="vi-VN-Wavenet-A",    # hoặc vi-VN-Neural2-A, vi-VN-Standard-A,...
+        ssml_gender=texttospeech.SsmlVoiceGender.FEMALE
     )
-    
-    reply = response.choices[0].message.content
-    print("Phản hồi từ GPT-4:", reply)  # Log phản hồi từ GPT-4
 
-    # Thêm phản hồi của chatbot vào lịch sử cuộc trò chuyện
-    session['conversation'].append({"role": "assistant", "content": reply})
+    # Chọn output config: MP3, tốc độ 1.0, cao độ mặc định
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3,
+        speaking_rate=1.0,
+        pitch=0.0
+    )
 
-    return jsonify({'reply': reply})
+    # Gửi request
+    response = tts_client.synthesize_speech(
+        input=synthesis_input, voice=voice, audio_config=audio_config
+    )
 
-if __name__ == '__main__':
-    app.run()
+    # Đưa dữ liệu âm thanh vào buffer và trả về
+    buf = io.BytesIO(response.audio_content)
+    buf.seek(0)
+    flask_resp = send_file(
+        buf,
+        mimetype="audio/mpeg",
+        as_attachment=False,
+        download_name="speech.mp3"
+    )
+    flask_resp.headers["Access-Control-Allow-Origin"] = "*"
+    return flask_resp
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
