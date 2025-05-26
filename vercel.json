@@ -4,12 +4,19 @@
     {
       "src": "app.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "templates/index.html",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "app.py"
+    { "src": "/",        "dest": "/templates/index.html" },
+    { "src": "/api/tts", "dest": "/app.py" }
+  ],
+  "functions": {
+    "app.py": {
+      "runtime": "python3.10"
     }
-  ]
+  }
 }
