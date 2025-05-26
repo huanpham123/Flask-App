@@ -1,28 +1,27 @@
-from flask import Flask, request, send_file, jsonify, render_template
-import io, logging
-import soundfile as sf
+import io
+import logging
+from flask import Flask, request, send_file, jsonify
 from TTS.api import TTS
+import soundfile as sf
 
+# --- Khởi tạo Flask ---
 app = Flask(__name__, template_folder="templates")
 
-# Logging
+# --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Khởi tạo Coqui TTS – model tiếng Việt VITS, GPU=False nếu bạn không có CUDA
+# --- Khởi tạo Coqui TTS model ---
+# model_name "tts_models/vi/viet_vits" chạy offline, chất lượng cao
 tts = TTS(
-    model_name="tts_models/vi/viet_vits",  # model VITS tiếng Việt
+    model_name="tts_models/vi/viet_vits",
     progress_bar=False,
     gpu=False
 )
 
-@app.route("/")
-def index():
-    return render_template("index.html")
-
 @app.route("/api/tts", methods=["GET", "POST"])
 def api_tts():
-    # Lấy text
+    # Lấy text từ GET hoặc POST
     if request.method == "POST":
         data = request.get_json(silent=True) or request.form
         text = data.get("text", "")
@@ -32,25 +31,27 @@ def api_tts():
     if not text:
         return jsonify({"error": "Missing text parameter"}), 400
 
-    logger.info(f"Synthesizing: {text[:50]}…")
+    logger.info(f"Synthesizing speech for: {text[:50]}…")
 
     # Sinh audio (numpy array) và sample_rate
     wav, sr = tts.tts(text)
 
-    # Ghi vào BytesIO dưới định dạng WAV
+    # Ghi ra buffer WAV
     buf = io.BytesIO()
     sf.write(buf, wav, sr, format="WAV")
     buf.seek(0)
 
-    # Trả về cho client
+    # Trả về file WAV
     resp = send_file(
         buf,
         mimetype="audio/wav",
         as_attachment=False,
         download_name="speech.wav"
     )
+    # Cho phép CORS nếu cần
     resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
 
 if __name__ == "__main__":
+    # Chạy local
     app.run(host="0.0.0.0", port=5000, debug=True)
