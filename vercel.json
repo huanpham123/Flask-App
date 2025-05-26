@@ -2,21 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "app.py",
+      "src": "TTS.py",
       "use": "@vercel/python"
-    },
-    {
-      "src": "templates/index.html",
-      "use": "@vercel/static"
     }
   ],
   "routes": [
-    { "src": "/",        "dest": "/templates/index.html" },
-    { "src": "/api/tts", "dest": "/app.py" }
-  ],
-  "functions": {
-    "app.py": {
-      "runtime": "python3.10"
+    {
+      "src": "/(.*)",
+      "dest": "TTS.py"
     }
-  }
+  ]
 }
