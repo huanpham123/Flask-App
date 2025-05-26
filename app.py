@@ -1,57 +1,84 @@
-import io
-import logging
-from flask import Flask, request, send_file, jsonify
-from TTS.api import TTS
-import soundfile as sf
+import io, logging, asyncio, re
+from concurrent.futures import ThreadPoolExecutor
+from flask import Flask, request, Response, render_template, jsonify
+from edge_tts import Communicate, exceptions as edgetts_exceptions
 
-# --- Khởi tạo Flask ---
 app = Flask(__name__, template_folder="templates")
-
-# --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Khởi tạo Coqui TTS model ---
-# model_name "tts_models/vi/viet_vits" chạy offline, chất lượng cao
-tts = TTS(
-    model_name="tts_models/vi/viet_vits",
-    progress_bar=False,
-    gpu=False
-)
+# Cấu hình
+VOICES = {
+    'female': 'vi-VN-HoaiMyNeural',
+    'male':   'vi-VN-NamMinhNeural'
+}
+DEFAULT_VOICE = VOICES['female']
+CHUNK_SIZE    = 100    # nhỏ đi cho nhanh chunk đầu
+MAX_WORKERS   = 6      # song song
+executor      = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
-@app.route("/api/tts", methods=["GET", "POST"])
-def api_tts():
-    # Lấy text từ GET hoặc POST
-    if request.method == "POST":
-        data = request.get_json(silent=True) or request.form
-        text = data.get("text", "")
-    else:
-        text = request.args.get("text", "")
+def split_chunks(text):
+    """Chia text thành mảng ≤ CHUNK_SIZE, cắt sau dấu câu ưu tiên."""
+    parts = re.split(r'(?<=[\.\!\?])\s+', text)
+    chunks, cur = [], ""
+    for p in parts:
+        if len(cur) + len(p) + 1 <= CHUNK_SIZE:
+            cur = (cur + " " + p).strip()
+        else:
+            if cur: chunks.append(cur)
+            cur = p
+    if cur: chunks.append(cur)
+    return chunks
 
-    if not text:
-        return jsonify({"error": "Missing text parameter"}), 400
-
-    logger.info(f"Synthesizing speech for: {text[:50]}…")
-
-    # Sinh audio (numpy array) và sample_rate
-    wav, sr = tts.tts(text)
-
-    # Ghi ra buffer WAV
+async def synthesize_async(chunk, voice):
+    """Sinh 1 chunk async, trả về bytes MP3."""
     buf = io.BytesIO()
-    sf.write(buf, wav, sr, format="WAV")
-    buf.seek(0)
+    comm = Communicate(chunk, voice)
+    async for msg in comm.stream():
+        if msg["type"] == "audio":
+            buf.write(msg["data"])
+    return buf.getvalue()
 
-    # Trả về file WAV
-    resp = send_file(
-        buf,
-        mimetype="audio/wav",
-        as_attachment=False,
-        download_name="speech.wav"
-    )
-    # Cho phép CORS nếu cần
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    return resp
+def synthesize_sync(chunk, voice):
+    """Gọi async synth ở sync context."""
+    return asyncio.run(synthesize_async(chunk, voice))
+
+@app.route("/")
+def index():
+    return render_template("TTS.html")
+
+@app.route("/api/tts")
+def api_tts():
+    text = (request.args.get("text") or "").strip()
+    voice = request.args.get("voice", DEFAULT_VOICE)
+    if not text or voice not in VOICES.values():
+        return jsonify({"error":"Invalid input"}), 400
+
+    chunks = split_chunks(text)
+    logger.info(f"Synthesizing in {len(chunks)} chunks (size≤{CHUNK_SIZE})")
+
+    def generate():
+        # 1) Synthesize chunk đầu ngay
+        first = chunks[0]
+        try:
+            data0 = synthesize_sync(first, voice)
+            yield data0
+        except Exception as e:
+            logger.exception("Error in first chunk")
+        
+        # 2) Song song hóa các chunk sau
+        rest = chunks[1:]
+        futures = [executor.submit(synthesize_sync, c, voice) for c in rest]
+        # 3) Lần lượt đợi và yield
+        for fut in futures:
+            try:
+                data = fut.result()
+                yield data
+            except Exception:
+                logger.exception("Error in later chunk")
+
+    # Trả về stream MP3 progressive
+    return Response(generate(), mimetype="audio/mpeg")
 
 if __name__ == "__main__":
-    # Chạy local
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(debug=True, threaded=True)
