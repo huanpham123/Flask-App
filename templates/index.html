@@ -1,14 +1,21 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Text-to-Speech Tiếng Việt</title>
-  <style>/* … giữ nguyên style … */</style>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; text-align: center; }
+    textarea { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: 1px solid #ccc; }
+    button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius:5px; cursor:pointer; }
+    button:hover { background-color: #45a049; }
+    #audioPlayer { width: 100%; margin-top: 20px; }
+    .loading { display:none; margin:10px 0; color:#666; }
+  </style>
 </head>
 <body>
   <h1>Text-to-Speech Tiếng Việt</h1>
-  <textarea id="textInput" rows="5" placeholder="Nhập văn bản ..."></textarea><br>
+  <textarea id="textInput" rows="5" placeholder="Nhập văn bản tiếng Việt..."></textarea><br/>
   <button onclick="playTTS()">Phát âm thanh</button>
   <div id="loading" class="loading">Đang xử lý...</div>
   <audio id="audioPlayer" controls></audio>
@@ -16,7 +23,8 @@
   <script>
     async function playTTS() {
       const text = document.getElementById('textInput').value.trim();
-      if (!text) { alert('Nhập văn bản đi bạn!'); return; }
+      if (!text) { alert('Vui lòng nhập văn bản!'); return; }
+
       const player = document.getElementById('audioPlayer');
       const loading = document.getElementById('loading');
       loading.style.display = 'block';
@@ -24,7 +32,7 @@
 
       try {
         const resp = await fetch(`/api/tts?text=${encodeURIComponent(text)}`);
-        if (!resp.ok) throw new Error(`Server lỗi: ${resp.status}`);
+        if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
         player.src = url;
@@ -32,14 +40,16 @@
         player.play();
       } catch (e) {
         alert(e.message);
+        console.error(e);
       } finally {
         loading.style.display = 'none';
       }
     }
 
     document.getElementById('textInput').addEventListener('keypress', e => {
-      if (e.key==='Enter' && !e.shiftKey) {
-        e.preventDefault(); playTTS();
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        playTTS();
       }
     });
   </script>
