@@ -1,3 +1,4 @@
-Flask
-TTS
-soundfile
+Flask>=2.0
+Werkzeug>=2.0
+TTS==0.10.2  
+SoundFile
