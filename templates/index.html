@@ -1,57 +1,85 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Text-to-Speech Tiếng Việt</title>
+  <meta charset="UTF-8">
+  <title>TTS Turbo</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; text-align: center; }
-    textarea { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: 1px solid #ccc; }
-    button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius:5px; cursor:pointer; }
-    button:hover { background-color: #45a049; }
-    #audioPlayer { width: 100%; margin-top: 20px; }
-    .loading { display:none; margin:10px 0; color:#666; }
+    body { font-family: Arial; max-width:800px; margin:auto; padding:20px; }
+    textarea { width:100%; height:150px; border:1px solid #4CAF50; padding:10px; }
+    button { background:#4CAF50;color:#fff;padding:10px 20px;border:none;cursor:pointer; }
+    button:hover { opacity:0.9; }
+    #status { color:#666; margin:10px 0; }
   </style>
 </head>
 <body>
-  <h1>Text-to-Speech Tiếng Việt</h1>
-  <textarea id="textInput" rows="5" placeholder="Nhập văn bản tiếng Việt..."></textarea><br/>
-  <button onclick="playTTS()">Phát âm thanh</button>
-  <div id="loading" class="loading">Đang xử lý...</div>
+  <h1>🇻🇳 TTS Turbo</h1>
+  <select id="voiceSelect">
+    <option value="vi-VN-HoaiMyNeural">Nữ – Hoài My</option>
+    <option value="vi-VN-NamMinhNeural">Nam – Nam Minh</option>
+  </select>
+  <textarea id="textInput" placeholder="Nhập văn bản..."></textarea><br/>
+  <button onclick="turboPlay()">PHÁT SIÊU TỐC</button>
+  <div id="status"></div>
   <audio id="audioPlayer" controls></audio>
 
   <script>
-    async function playTTS() {
-      const text = document.getElementById('textInput').value.trim();
-      if (!text) { alert('Vui lòng nhập văn bản!'); return; }
-
-      const player = document.getElementById('audioPlayer');
-      const loading = document.getElementById('loading');
-      loading.style.display = 'block';
-      player.style.display = 'none';
-
-      try {
-        const resp = await fetch(`/api/tts?text=${encodeURIComponent(text)}`);
-        if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        player.src = url;
-        player.style.display = 'block';
-        player.play();
-      } catch (e) {
-        alert(e.message);
-        console.error(e);
-      } finally {
-        loading.style.display = 'none';
+    class TTSTurbo {
+      constructor() {
+        this.mediaSource = new MediaSource();
+        this.audio = document.getElementById('audioPlayer');
+        this.audio.src = URL.createObjectURL(this.mediaSource);
+        this.queue = [];
+        this.updating = false;
+        this.mediaSource.addEventListener('sourceopen', () => {
+          this.sb = this.mediaSource.addSourceBuffer('audio/mpeg');
+          this.sb.addEventListener('updateend', () => {
+            this.updating = false;
+            this._appendNext();
+          });
+        });
+      }
+      async play(text, voice) {
+        document.getElementById('status').textContent = '⚡ Đang phát...';
+        const resp = await fetch(`/api/tts?text=${encodeURIComponent(text)}&voice=${voice}`);
+        const reader = resp.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          this.queue.push(value);
+          this._appendNext();
+        }
+        // chờ queue hết
+        await new Promise(r => {
+          const check = () => {
+            if (!this.updating && this.queue.length === 0) r();
+            else setTimeout(check, 50);
+          };
+          check();
+        });
+        this.mediaSource.endOfStream();
+        document.getElementById('status').textContent = '✅ Hoàn thành';
+      }
+      _appendNext() {
+        if (!this.updating && this.queue.length) {
+          this.updating = true;
+          this.sb.appendBuffer(this.queue.shift());
+        }
       }
     }
 
-    document.getElementById('textInput').addEventListener('keypress', e => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        playTTS();
+    async function turboPlay() {
+      const text = document.getElementById('textInput').value.trim();
+      if (!text) return alert('Nhập văn bản!');
+      const voice = document.getElementById('voiceSelect').value;
+      document.getElementById('status').textContent = '🚀 Khởi động...';
+      try {
+        const p = new TTSTurbo();
+        await p.play(text, voice);
+      } catch (e) {
+        document.getElementById('status').textContent = '❌ Lỗi: '+e.message;
+        console.error(e);
       }
-    });
+    }
   </script>
 </body>
 </html>
